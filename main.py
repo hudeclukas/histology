@@ -5,7 +5,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from keras.utils import plot_model
 
-from model import UNet, VAE_2
+from ae import AE
 from data import DataGen
 
 ## Seeding
@@ -18,9 +18,11 @@ channels = 3
 train_path = "D:/Vision_Images/Histology/ICIAR 2018/selectedpairs/All/"
 database_path = "D:/Vision_Images/Histology/ICIAR 2018/selectedpairs/benign/"
 model_path = "D:/DL_Models/histology/"
-model_name = "VAE2_W.h5"
-epochs = 2
+model_name = "AE_W_.h5"
+epochs = 500
+iterations = 20000
 batch_size = 8
+learning_rate = 1.5e-3
 
 ## Training Ids
 train_ids = np.asarray(os.listdir(train_path))
@@ -44,38 +46,76 @@ if not os.path.exists(model_path):
 
 # model, model_middle = UNet(256, 3)
 
-vae = VAE_2(batch_size, units=20)
-model_vae, model_encoder, latents, ios = vae.make_vae2()
+ae = AE(batch_size, units=200)
+model_ae, model_encoder, latents, ios = ae.make_ae()
 
 if os.path.exists(os.path.join(model_path, model_name)):
-    model_vae.load_weights(os.path.join(model_path,model_name))
-
+    try:
+        model_ae.load_weights(os.path.join(model_path, model_name))
+        print('Weights loaded from:')
+        print(os.path.join(model_path,model_name))
+    except ValueError as e:
+        print('{0}'.format(e))
+        print('Not loading old weights.')
 
 # model_vae.add_loss(vae_loss)
-adam = tf.keras.optimizers.Adam(lr=0.0001)
-model_vae.compile(optimizer=adam, metrics=["acc"], loss=vae.vae_loss())
-model_vae.summary()
-plot_model(model_vae,model_path+"modelvae.png")
+optimizer = tf.keras.optimizers.Adam(lr=learning_rate) #, clipvalue=1000000.
+model_ae.compile(optimizer=optimizer, metrics=["mae"], loss=ae.ae_loss())
+model_ae.summary()
+plot_model(model_ae, model_path + "model_ae.png", show_shapes=True)
+plot_model(model_encoder, model_path+"model_ae_enc.png",show_shapes=True)
 # model_middle.summary()
 
-
 ## Dataset for prediction
-x, y = valid_gen.__getitem__(0)
-result = model_vae.predict(x)
-rr = np.concatenate((x[0],result[0]),axis=1)
+xv, yv = valid_gen.__getitem__(0)
+result = model_ae.predict(xv)
+rr = np.concatenate((xv[0], result[0]), axis=1)
 plt.imshow(rr)
 plt.show()
+
+if False:
+    for i in range(iterations+1):
+        xx,yy = train_gen.__getitem__(i%train_steps)
+        loss, mae = model_ae.train_on_batch(xx, yy)
+        print(i)
+        print("Loss: {:f}".format(loss))
+        print("Mean absolute error: {:f}".format(mae))
+        if i % 200 == 0:
+            result = model_ae.predict(xv)
+            pos = 1
+            fig = plt.figure(figsize=(10, 11))
+            # fig.suptitle('Iteration: {:d}'.format(i))
+            for j in range(len(xv)):
+                rr = np.concatenate((xv[j], result[j]), axis=1)
+                fig.add_subplot(4, 2, pos)
+                pos += 1
+                plt.title('I: {:d} id: {:d}'.format(i,j))
+                plt.imshow(rr)
+            plt.show()
+        if i > 0 and i % 2000:
+            print("Model saved.")
+            model_ae.save_weights(model_path + model_name)
 
 if epochs > 0:
-    model_vae.fit_generator(train_gen, validation_data=valid_gen, steps_per_epoch=train_steps, validation_steps=valid_steps, epochs=epochs)
+    for e in range(epochs // 50 +1):
+        model_ae.fit_generator(train_gen, validation_data=valid_gen, steps_per_epoch=train_steps, validation_steps=valid_steps, epochs=50)
 
-    ## Save the Weights
-    model_vae.save_weights(model_path + model_name)
+        ## Save the Weights
+        model_ae.save_weights(model_path + model_name)
 
-result = model_vae.predict(x)
-rr = np.concatenate((x[0],result[0]),axis=1)
-plt.imshow(rr)
-plt.show()
+        result = model_ae.predict(xv)
+        pos = 1
+        fig = plt.figure(figsize=(10, 8))
+        # fig.suptitle('Iteration: {:d}'.format(i))
+        for j in range(len(xv)):
+            rr = np.concatenate((xv[j], result[j]), axis=1)
+            fig.add_subplot(4, 2, pos)
+            pos += 1
+            plt.title('Epoch: {:d} id: {:d}'.format(e*10, j))
+            plt.imshow(rr)
+        plt.show()
+
+
 
 ## Dataset for prediction
 # support_set = valid_gen.n_way_validation_support_set(5)

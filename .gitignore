@@ -1,0 +1,6 @@
+*.swp
+__pycache__
+*.pbtext
+completions
+*.pyc
+.idea

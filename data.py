@@ -13,6 +13,22 @@ np.random.seed = seed
 tf.seed = seed
 
 
+class DualDataGen(keras.utils.Sequence):
+    def __init__(self):
+        pass
+
+    def __load__(self, name, path):
+        pass
+
+    def __getitem__(self, index):
+        pass
+
+    def on_epoch_end(self):
+        pass
+
+    def __len__(self):
+        pass
+
 class DataGen(keras.utils.Sequence):
     def __init__(self, ids, path, database_path='', batch_size=8, image_size=256, channels=3):
         self.ids = ids
