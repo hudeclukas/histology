@@ -15,14 +15,14 @@ tf.seed = seed
 
 image_size = 256
 channels = 3
-train_path = "D:/Vision_Images/Histology/ICIAR 2018/selectedpairs/All/"
-database_path = "D:/Vision_Images/Histology/ICIAR 2018/selectedpairs/benign/"
-model_path = "D:/DL_Models/histology/"
+train_path = "D:/HudecL/histology/All/"
+database_path = "D:/HudecL/histology/benign/"
+model_path = "D:/HudecL/DL_Models/histology/"
 model_name = "AE_W_.h5"
-epochs = 500
+epochs = 0
 iterations = 20000
-batch_size = 8
-learning_rate = 1.5e-3
+batch_size = 16
+learning_rate = 1.5e-5
 
 ## Training Ids
 train_ids = np.asarray(os.listdir(train_path))
@@ -69,13 +69,23 @@ plot_model(model_encoder, model_path+"model_ae_enc.png",show_shapes=True)
 ## Dataset for prediction
 xv, yv = valid_gen.__getitem__(0)
 result = model_ae.predict(xv)
-rr = np.concatenate((xv[0], result[0]), axis=1)
-plt.imshow(rr)
-plt.show()
+pos = 1
+fig = plt.figure(figsize=(10, 20))
+# fig.suptitle('Iteration: {:d}'.format(i))
+for j in range(len(xv)):
+    rr = np.concatenate((xv[j], result[j]), axis=1)
+    fig.add_subplot(8, 2, pos)
+    pos += 1
+    plt.title('Start test')
+    plt.imshow(rr)
+plt.savefig(os.path.join(model_path,'figure_start.png'))
+plt.clf()
+plt.cla()
+plt.close()
 
 if False:
     for i in range(iterations+1):
-        xx,yy = train_gen.__getitem__(i%train_steps)
+        xx,yy = train_gen.__getitem__(i % train_steps)
         loss, mae = model_ae.train_on_batch(xx, yy)
         print(i)
         print("Loss: {:f}".format(loss))
@@ -97,54 +107,74 @@ if False:
             model_ae.save_weights(model_path + model_name)
 
 if epochs > 0:
-    for e in range(epochs // 50 +1):
-        model_ae.fit_generator(train_gen, validation_data=valid_gen, steps_per_epoch=train_steps, validation_steps=valid_steps, epochs=50)
+    for e in range(epochs // 100 +1):
+        model_ae.fit_generator(train_gen, validation_data=valid_gen, steps_per_epoch=train_steps, validation_steps=valid_steps, epochs=100)
 
         ## Save the Weights
         model_ae.save_weights(model_path + model_name)
 
         result = model_ae.predict(xv)
         pos = 1
-        fig = plt.figure(figsize=(10, 8))
+        fig = plt.figure(figsize=(10, 20))
         # fig.suptitle('Iteration: {:d}'.format(i))
         for j in range(len(xv)):
             rr = np.concatenate((xv[j], result[j]), axis=1)
-            fig.add_subplot(4, 2, pos)
+            fig.add_subplot(8, 2, pos)
             pos += 1
-            plt.title('Epoch: {:d} id: {:d}'.format(e*10, j))
+            plt.title('Epoch: {:d} id: {:d}'.format(e*100, j))
             plt.imshow(rr)
-        plt.show()
-
+        plt.savefig(os.path.join(model_path,'figure_{:d}'.format(e) + '.png'))
+        plt.clf()
+        plt.cla()
+        plt.close()
 
 
 ## Dataset for prediction
-# support_set = valid_gen.n_way_validation_support_set(5)
-# support_set_middles = {}
-# for set_key in support_set.keys():
-#     set = np.asarray(support_set[set_key])
-#     support_set_middles[set_key] = model_middle.predict(set)
-# for i in range(1): #valid_steps
-#     x, y = valid_gen.__getitem__(i)
-#     middles = model_middle.predict(x)
-#     verif = model.predict(y)
-#     verif_middle = model_middle.predict(verif)
-#     mid = middles[0]
-#     dst = valid_gen.l2_norm(mid.flatten(), verif_middle[0].flatten())
-#     plt.imshow(x[0])
-#     plt.title('one_shot_sample ' + str(dst))
-#     plt.show()
-#     pos = 1
-#     fig = plt.figure(figsize=(13,16))
-#     for sp_key in support_set_middles.keys():
-#         sp_middles = support_set_middles[sp_key]
-#
-#         for s in range(len(sp_middles)):
-#             fig.add_subplot(6, 5, pos)
-#             pos+=1
-#             dst = valid_gen.l2_norm(mid.flatten(), sp_middles[s].flatten())
-#             plt.title(sp_key + ' ' + str(dst))
-#             plt.imshow(support_set[sp_key][s])
-#
-# plt.show()
+support_set = valid_gen.n_way_validation_support_set(5)
+support_set_middles = {}
+for set_key in support_set.keys():
+    set = np.asarray(support_set[set_key])
+    support_set_middles[set_key] = model_encoder.predict(set)
+for i in range(valid_steps):
+    x, y = valid_gen.__getitem__(i)
+    middles = model_encoder.predict(x)
+    verif = model_ae.predict(y)
+    verif_middle = model_encoder.predict(verif)
 
+    samples_path = os.path.join(model_path, 'samples')
+    if not os.path.exists(samples_path):
+        os.makedirs(samples_path)
 
+    for j in range(len(x)):
+        index = j + i * len(x)
+        mid = middles[j]
+        dst = valid_gen.l2_norm(mid.flatten(), verif_middle[j].flatten())
+        plt.title('one_shot_sample ' + str(dst))
+        plt.imshow(x[j])
+        plt.savefig(os.path.join(samples_path, '_{:d}_oneshot_fig.png'.format(index)))
+        plt.clf()
+        plt.cla()
+
+        dsts = {}
+        for sp_key in support_set_middles.keys():
+            sp_middles = support_set_middles[sp_key]
+            dsts[sp_key] = list()
+            for s in range(len(sp_middles)):
+                dsts[sp_key].append(valid_gen.l2_norm(mid.flatten(), sp_middles[s].flatten()))
+            idx = np.argsort(dsts[sp_key])
+            support_set[sp_key] = np.array(support_set[sp_key])[idx]
+            dsts[sp_key] = np.array(dsts[sp_key])[idx]
+        pos = 1
+        fig = plt.figure(figsize=(16,21))
+        for sp_key in support_set_middles.keys():
+            sp_middles = support_set_middles[sp_key]
+            for s in range(len(sp_middles)):
+                fig.add_subplot(6, 5, pos)
+                pos += 1
+                plt.title(sp_key + ' ' + str(dsts[sp_key][s]))
+                plt.imshow(support_set[sp_key][s])
+
+        plt.savefig(os.path.join(samples_path, '_{:d}_n_way_validation.png'.format(index)))
+        plt.clf()
+        plt.cla()
+        plt.close()
